@@ -1,8 +1,11 @@
 #include <iostream>
-#include <list>
 #include <fstream>
+#include <vector>
+#include <list>
+#include <random>
 #include <string>
 #include <sstream>
+#include "sha256.h"
 
 using namespace std;
 
@@ -12,129 +15,243 @@ using namespace std;
 #define clearscreen "clear"
 #endif
 
-// This class represents a directed graph using
-// adjacency list representation
-class Graph
+#define tableSize 255
+
+struct user
 {
-    int V; // No. of vertices
+    string name;
+    string salt;
+    string hashedPass;
+    string *recoveryQuestion = new string[3];
+    string *hashedrecoveryAns = new string[3];
+    
+    
+    user(string n = "", string s = "", string hp = "",string *recovQ = NULL, string *recovA = NULL) : name(n), salt(s), hashedPass(hp)
+    {
+        if (recovQ != NULL)
+            recoveryQuestion = recovQ;
+        if (recovA != NULL)
+            hashedrecoveryAns = recovA;
+    }
+    
+    void newUser()
+    {
+        string pass;
+        string ans;
+        cout << "Name: ";
+        getline(cin, name);
+        salt = random_string();
+        cout << "Password: ";
+        getline(cin, pass);
+        hashedPass = sha256(pass + salt);
+        for (int i = 0; i < 3; i++) {
+            cout << "Recovery question " << i + 1 << ": ";
+            getline(cin, recoveryQuestion[i]);
+            cout << "Recovery answer " << i + 1 << ": ";
+            getline(cin, ans);
+            hashedrecoveryAns[i] = sha256(ans + salt);
+        }
+    }
+    
+    string random_string() {
+        string str("0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz");
 
-    // Pointer to an array containing adjacency
-    // lists
-    list<int> *adj;
-public:
-    Graph(int V); // Constructor
+        random_device seed;
+        default_random_engine generator(seed());
 
-    // function to add an edge to graph
-    void addEdge(int v, int w);
+        shuffle(str.begin(), str.end(), generator);
 
-    // prints BFS traversal from a given source s
-    void BFS(int s);
-    
-    void displayAdjList();
-    
-    list<int> friendBFS(int s);
-    
-    void recommendFriend(int s);
-    
-    void saveFile(string name);
-    
-    bool loadFile(string name);
+        return str.substr(0, 7);    // assumes 7 < number of characters in str
+    }
 };
 
-Graph::Graph(int V)
+class Hash
 {
-    this->V = V;
-    adj = new list<int>[V];
-}
+    int BUCKET;
+    
+    list<user> *table;
+public:
+    Hash(int V); // Constructor
 
-void Graph::addEdge(int v, int w)
-{
-    adj[v].push_back(w); // Add w to v’s list.
-    adj[w].push_back(v);
-}
+    // inserts a key into hash table
+    bool insertItem(user key);
 
-void Graph::BFS(int s)
-{
-    // Mark all the vertices as not visited
-    bool *visited = new bool[V];
-    for(int i = 0; i < V; i++)
-        visited[i] = false;
-
-    // Create a queue for BFS
-    list<int> queue;
-
-    // Mark the current node as visited and enqueue it
-    visited[s] = true;
-    queue.push_back(s);
-
-    // 'i' will be used to get all adjacent
-    // vertices of a vertex
-    list<int>::iterator i;
-
-    while(!queue.empty())
+    // deletes a key from hash table
+    bool deleteItem(user key);
+    
+    // authentication a key
+    bool authItem(string username);
+    
+    // reset pass of a key
+    bool resetPass(string username);
+    
+    // hash function to map values to key
+    unsigned short hashFunction(string str)
     {
-        // Dequeue a vertex from queue and print it
-        s = queue.front();
-        cout << s << " ";
-        queue.pop_front();
+        //djb2 hash
+        unsigned short hash = 5381;
+        int c;
 
-        // Get all adjacent vertices of the dequeued
-        // vertex s. If a adjacent has not been visited,
-        // then mark it visited and enqueue it
-        for (i = adj[s].begin(); i != adj[s].end(); ++i)
+        short strLength = str.length();
+        for (short i = 0; i < strLength; i++)
         {
-            if (!visited[*i])
-            {
-                visited[*i] = true;
-                queue.push_back(*i);
+            c = str[i];
+            hash = ((hash << 5) + hash) + c; /* hash * 33 + c */
+        }
+        return hash % tableSize;
+    }
+
+    void displayHash();
+    
+    void saveFile(string name);
+
+    bool loadFile(string fileName);
+};
+
+Hash::Hash(int b)
+{
+    this->BUCKET = b;
+    table = new list<user>[BUCKET];
+}
+
+bool Hash::insertItem(user key)
+{
+    int index = hashFunction(key.name);
+    for (auto x : table[index])
+        if (x.name == key.name)
+            return false;
+    table[index].push_back(key);
+    return true;
+}
+
+bool Hash::deleteItem(user key)
+{
+    // get the hash index of key
+    int index = hashFunction(key.name);
+
+    // find the key in (index)th list
+    list <user> :: iterator i;
+    for (i = table[index].begin(); i != table[index].end(); i++) {
+        if (i->name == key.name)
+            break;
+    }
+
+    // if key is found in hash table, remove it
+    if (i != table[index].end())
+        {
+            table[index].erase(i);
+            return true;
+        }
+    return false;
+}
+
+bool Hash::authItem(string username)
+{
+    string hashedPass, pass;
+    int index = hashFunction(username);
+    for (auto x : table[index])
+        if (x.name == username)
+        {
+            cout << "Enter password: ";
+            getline(cin, pass);
+            if (x.hashedPass == sha256(pass + x.salt)) {
+                return true;
             }
         }
+    return false;
+}
+
+bool Hash::resetPass(string username)
+{
+    int index = hashFunction(username);
+    int count = 0;
+    string ans, pass;
+    for (auto &x : table[index])
+        if (x.name == username)
+        {
+            for (int i = 0; i < 3; i++)
+            {
+                cout << x.recoveryQuestion[i] << endl;
+                cout << "Your answer: ";
+                getline(cin, ans);
+                if (x.hashedrecoveryAns[i] == sha256(ans + x.salt))
+                {
+                    count++;
+                }
+            }
+            if(count >= 2)
+            {
+                cout << "Enter your new password: ";
+                getline(cin, pass);
+                x.hashedPass = sha256(pass + x.salt);
+                return true;
+            }
+        }
+    return false;
+}
+
+    // function to display hash table
+void Hash::displayHash()
+{
+    for (int i = 0; i < BUCKET; i++)
+    {
+        cout << i;
+        for (auto x : table[i])
+            cout << " --> " << x.name;
+        cout << endl;
     }
 }
 
-void Graph::saveFile(string name)
+
+void Hash::saveFile(string name)
 {
     ofstream ofs(name);
     
-    ofs << V << endl;
-    
-    for (int i = 0; i < V; i++) {
+    for (int i = 0; i < tableSize; i++) {
         ofs << i;
-        for (auto x : adj[i])
-            ofs << " --> " << x;
+        for (auto x : table[i])
+            ofs << " --> " << x.name << ',' << x.salt << ',' << x.hashedPass << ',' << x.recoveryQuestion[0] << ',' << x.hashedrecoveryAns[0] << ',' << x.recoveryQuestion[1] << ',' << x.hashedrecoveryAns[1] << ',' << x.recoveryQuestion[2] << ',' << x.hashedrecoveryAns[2];
         ofs << endl;
     }
     
     ofs.close();
 }
 
-bool Graph::loadFile(string name)
+bool Hash::loadFile(string fileName)
 {
-    ifstream ifs(name);
+    ifstream ifs(fileName);
+    string name;
+    string salt;
+    string hashedPass;
+    string *recoveryQuestion = new string[3];
+    string *hashedrecoveryAns = new string[3];
+    
     if(ifs.is_open())
     {
-        if(adj != NULL)
-            delete [] adj;
-        
-        ifs >> V;
-        ifs.ignore();
-        
-        adj = new list<int>[V];
-        
         string s;
         int idx;
-        int des;
         while (!ifs.eof()) {
             getline(ifs, s);
             stringstream ss(s);
             ss >> idx;
             while (!ss.eof()) {
+                
                 ss.ignore(5);
-                ss >> des;
-                adj[idx].push_back(des);
+                getline(ss, name, ',');
+                getline(ss, salt, ',');
+                getline(ss, hashedPass, ',');
+                for (int i = 0; i < 2; i++) {
+                    getline(ss, recoveryQuestion[i], ',');
+                    getline(ss, hashedrecoveryAns[i], ',');
+                }
+                getline(ss, recoveryQuestion[2], ',');
+                getline(ss, hashedrecoveryAns[2]);
+                user *temp = new user(name, salt, hashedPass, recoveryQuestion, hashedrecoveryAns);
+                this->insertItem(*temp);
+                delete temp;
             }
         }
-        
+
         ifs.close();
         return true;
     }
@@ -142,79 +259,16 @@ bool Graph::loadFile(string name)
         return false;
 }
 
-void Graph::recommendFriend(int s)
-{
-    // Mark all the vertices as not visited
-    bool *visited = new bool[V];
-    for(int i = 0; i < V; i++)
-        visited[i] = false;
-
-    // Create a queue for BFS
-    list<int> queue;
-
-    // Mark the current node as visited and enqueue it
-    visited[s] = true;
-    queue.push_back(s);
-
-    // 'i' will be used to get all adjacent
-    // vertices of a vertex
-    list<int>::iterator i;
-    list<int> friends;
-    int oneTimeUse = 1;
-    
-    while(!queue.empty())
-    {
-        // Dequeue a vertex from queue and print it
-        s = queue.front();
-        queue.pop_front();
-
-        // Get all adjacent vertices of the dequeued
-        // vertex s. If a adjacent has not been visited,
-        // then mark it visited and enqueue it
-        for (i = adj[s].begin(); i != adj[s].end(); ++i)
-        {
-            if (!visited[*i])
-            {
-                visited[*i] = true;
-                queue.push_back(*i);
-            }
-        }
-        
-        if (oneTimeUse) {
-            oneTimeUse--;
-            friends = queue;
-        }
-        
-        friends.remove(s);
-        if (friends.empty()) {
-            //print out the recommend friends.
-            for (auto x : queue) {
-                cout << x << ' ';
-            }
-            return;
-        }
-    }
-}
-
-void Graph::displayAdjList()
-{
-    for (int i = 0; i < V; i++) {
-        cout << i;
-        for (auto x : adj[i])
-            cout << " --> " << x;
-        cout << endl;
-    }
-}
-// Driver program to test methods of graph class
-
 void printMenu() {
-    cout << "Welcome to find friends program!" << endl;
-    cout << "1. Find friends" << endl;
-    cout << "2. Load friends relationship" << endl;
-    cout << "3. Save friend relationship" << endl;
-    cout << "4. Print friends relationship" << endl;
-    cout << "5. Add relationship" << endl;
-    cout << "6. Clear screen" << endl;
+    cout << "Register and login" << endl;
+    cout << "1. Register" << endl;
+    cout << "2. Login" << endl;
+    cout << "3. Delete user" << endl;
+    cout << "4. Display hash table" << endl;
+    cout << "5. Clear screen" << endl;
+    cout << "6. Save file" << endl;
+    cout << "7. Load file" << endl;
+    cout << "8. Forget password" << endl;
     cout << "0. Exit" << endl;
     cout << "-----------------------------" << endl;
     cout << "Your choice:";
@@ -222,24 +276,10 @@ void printMenu() {
 
 void menu()
 {
-    // Create a graph given in the above diagram
-    int vNumb = 9;
-    Graph g(vNumb);
-    g.addEdge(0, 1);
-    g.addEdge(0, 2);
-    g.addEdge(1, 2);
-    g.addEdge(1, 7);
-    g.addEdge(2, 3);
-    g.addEdge(3, 4);
-    g.addEdge(3, 5);
-    g.addEdge(4, 6);
-    g.addEdge(5, 6);
-    g.addEdge(6, 8);
-    string fileNameIn = "input";
-    string fileNameOut = "output";
-    
-    int find;
-    int fr1, fr2;
+    // insert the keys into the hash table
+    Hash h(tableSize); // 65535 is count of buckets in hash table (max of unsigned short)
+    string username, pass;
+    user temp;
     while (true)
     {
         int opt;
@@ -249,45 +289,71 @@ void menu()
 
         switch (opt)
         {
-        case 1:
-                cout << "Kimi no Na wa (enter number smaller than " << vNumb << " only): ";
-                cin >> find;
-                cin.ignore();
-                g.recommendFriend(find);
+            case 1:
+                temp.newUser();
+                if(h.insertItem(temp))
+                    cout << "Add new user sucsessfully" << endl;
+                else
+                    cout << "Error!"<< endl;
                 break;
-        case 2:
-                g.loadFile(fileNameIn);
+            case 2:
+                cout << "Enter username: ";
+                getline(cin, username);
+                if(h.authItem(username))
+                    cout << "login sucsessfully!" << endl;
+                else
+                    cout << "error" << endl;
                 break;
-        case 3:
-                g.saveFile(fileNameOut);
+            case 3:
+                cout << "Enter username: ";
+                getline(cin, username);
+                if(h.authItem(username))
+                {
+                    struct user key(username);
+                    h.deleteItem(key);
+                    cout << "delete sucsessfully!" << endl;
+                }
+                else
+                    cout << "error" << endl;
                 break;
-        case 4:
-                g.displayAdjList();
+            case 4:
+                h.displayHash();
                 break;
-        case 5:
-                cout << "Enter 2 node: ";
-                cin >> fr1 >> fr2;
-                cin.ignore(2);
-                g.addEdge(fr1, fr2);
-            break;
-        case 6:
-                //clrscr
+            case 5:
+                system(clearscreen);
                 break;
-        case 0:
+            case 6:
+                h.saveFile("output");
+                cout << "Done" << endl;
+                break;
+            case 7:
+                if(h.loadFile("input"))
+                    cout << "Done" << endl;
+                else
+                    cout << "Error!" << endl;
+                break;
+            case 8:
+                cout << "Enter username: ";
+                getline(cin, username);
+                if (h.resetPass(username)) {
+                    cout << "Done!" << endl;
+                }
+                else
+                    cout << "Error!" << endl;
+                break;
+            case 0:
                 exit(0);
                 break;
-        default:
+            default:
                 break;
         }
+
         cout << "Press enter to continue!";
         while ((getchar()) != '\n');
-        if(opt == 6)
-            system(clearscreen);
     }
 }
 
-int main(int argc, const char * argv[])
-{
+int main(int argc, const char * argv[]) {
     menu();
     return 0;
 }
