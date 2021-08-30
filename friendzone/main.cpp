@@ -250,7 +250,7 @@ void menu()
         switch (opt)
         {
         case 1:
-                cout << "Kimi no Na wa (number in range only): ";
+                cout << "Kimi no Na wa (enter number smaller than " << vNumb << " only): ";
                 cin >> find;
                 cin.ignore();
                 g.recommendFriend(find);
@@ -265,13 +265,13 @@ void menu()
                 g.displayAdjList();
                 break;
         case 5:
-                cout << "Nhap 2 nguoi can ket ban: ";
+                cout << "Enter 2 node: ";
                 cin >> fr1 >> fr2;
                 cin.ignore(2);
                 g.addEdge(fr1, fr2);
             break;
         case 6:
-                system(clearscreen);
+                //clrscr
                 break;
         case 0:
                 exit(0);
@@ -279,9 +279,10 @@ void menu()
         default:
                 break;
         }
-
         cout << "Press enter to continue!";
         while ((getchar()) != '\n');
+        if(opt == 6)
+            system(clearscreen);
     }
 }
 
