@@ -38,10 +38,10 @@ struct user
     {
         string pass;
         string ans;
-        cout << "Ghi ten ban vao ne: ";
+        cout << "Name: ";
         getline(cin, name);
         salt = random_string();
-        cout << "pass nua UwU ";
+        cout << "Password: ";
         getline(cin, pass);
         hashedPass = sha256(pass + salt);
         for (int i = 0; i < 3; i++) {
@@ -81,6 +81,9 @@ public:
     
     // authentication a key
     bool authItem(string username);
+    
+    // reset pass of a key
+    bool resetPass(string username);
     
     // hash function to map values to key
     unsigned short hashFunction(string str)
@@ -149,9 +152,38 @@ bool Hash::authItem(string username)
     for (auto x : table[index])
         if (x.name == username)
         {
-            cout << "Nhap password: ";
+            cout << "Enter password: ";
             getline(cin, pass);
             if (x.hashedPass == sha256(pass + x.salt)) {
+                return true;
+            }
+        }
+    return false;
+}
+
+bool Hash::resetPass(string username)
+{
+    int index = hashFunction(username);
+    int count = 0;
+    string ans, pass;
+    for (auto &x : table[index])
+        if (x.name == username)
+        {
+            for (int i = 0; i < 3; i++)
+            {
+                cout << x.recoveryQuestion[i] << endl;
+                cout << "Your answer: ";
+                getline(cin, ans);
+                if (x.hashedrecoveryAns[i] == sha256(ans + x.salt))
+                {
+                    count++;
+                }
+            }
+            if(count >= 2)
+            {
+                cout << "Enter your new password: ";
+                getline(cin, pass);
+                x.hashedPass = sha256(pass + x.salt);
                 return true;
             }
         }
@@ -236,6 +268,7 @@ void printMenu() {
     cout << "5. Clear screen" << endl;
     cout << "6. Save file" << endl;
     cout << "7. Load file" << endl;
+    cout << "8. Forget password" << endl;
     cout << "0. Exit" << endl;
     cout << "-----------------------------" << endl;
     cout << "Your choice:";
@@ -258,15 +291,18 @@ void menu()
         {
             case 1:
                 temp.newUser();
-                h.insertItem(temp);
+                if(h.insertItem(temp))
+                    cout << "Add new user sucsessfully" << endl;
+                else
+                    cout << "Error!"<< endl;
                 break;
             case 2:
                 cout << "Enter username: ";
                 getline(cin, username);
                 if(h.authItem(username))
-                    cout << "login sucsessfully!";
+                    cout << "login sucsessfully!" << endl;
                 else
-                    cout << "error";
+                    cout << "error" << endl;
                 break;
             case 3:
                 cout << "Enter username: ";
@@ -275,10 +311,10 @@ void menu()
                 {
                     struct user key(username);
                     h.deleteItem(key);
-                    cout << "delete sucsessfully!";
+                    cout << "delete sucsessfully!" << endl;
                 }
                 else
-                    cout << "error";
+                    cout << "error" << endl;
                 break;
             case 4:
                 h.displayHash();
@@ -288,9 +324,22 @@ void menu()
                 break;
             case 6:
                 h.saveFile("output");
+                cout << "Done" << endl;
                 break;
             case 7:
-                h.loadFile("input");
+                if(h.loadFile("input"))
+                    cout << "Done" << endl;
+                else
+                    cout << "Error!" << endl;
+                break;
+            case 8:
+                cout << "Enter username: ";
+                getline(cin, username);
+                if (h.resetPass(username)) {
+                    cout << "Done!" << endl;
+                }
+                else
+                    cout << "Error!" << endl;
                 break;
             case 0:
                 exit(0);
